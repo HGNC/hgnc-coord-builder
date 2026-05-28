@@ -1,0 +1,1 @@
+"""HGNC coordinate builder service."""

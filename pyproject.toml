@@ -1,0 +1,61 @@
+[project]
+name = "hgnc-coord-builder"
+version = "0.1.0"
+description = "Batch Cloud Run Job for building HGNC coordinate data"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "ensembl-orm",
+    "genew4-orm",
+    "psycopg[binary]>=3.2",
+    "pydantic-settings>=2.7.0",
+    "sqlalchemy>=2.0",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.15.0",
+    "pytest>=9.0.3",
+    "pytest-cov>=6.1.0",
+    "pytest-mock>=3.14.0",
+    "ruff>=0.11.0",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "TCH", "RUF", "D"]
+ignore = ["D100", "D104", "D203", "D213"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D101", "D102", "D103"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+strict = true
+python_version = "3.13"
+warn_return_any = true
+disallow_untyped_defs = true
+show_error_codes = true
+pretty = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov --cov-report=term-missing --cov-fail-under=85"
+markers = [
+    "unit: pure unit tests with no external dependencies",
+    "integration: tests involving multiple layers or external resources",
+    "db: tests requiring an ephemeral database container",
+    "slow: tests that take longer than 1 second",
+]
+
+[tool.uv.sources]
+ensembl-orm = { git = "https://github.com/HGNC/ensembl-orm.git", rev = "87c43c9d4fd58973ca54f0829e4fa4689f7e497e" }
+genew4-orm = { git = "https://github.com/HGNC/genew4-orm.git", rev = "85587b905a59b86ff3e51504a4f23f241b803e1f" }
