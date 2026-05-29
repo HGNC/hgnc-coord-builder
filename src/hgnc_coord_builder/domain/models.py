@@ -26,98 +26,101 @@ class CoordSource(str, enum.Enum):
 
 
 class CoordinateRecord(BaseModel):
-    """A GRCh38-compatible coordinate record from a single sub-source.
+    """A GRCh38-compatible coordinate record matching the cm_* DDL schema.
 
-    Represents a genomic coordinate linked to an HGNC gene. Records are
-    normalised on construction: whitespace is trimmed from string fields,
-    empty optional strings become None, and strand is validated to be
-    1 or -1.
-
-    Records are sortable by (hgnc_id, chromosome) for deterministic
-    ordering during bulk loads.
+    Field names and types align exactly with the ``coord_match_grch38``
+    staging table DDL. Records are sortable by (cm_hgnc_id, cm_chr) for
+    deterministic ordering during bulk loads.
 
     Attributes:
-        hgnc_id: HGNC identifier (e.g. ``HGNC:1100``).
-        chromosome: Chromosome name (e.g. ``7``, ``X``, ``MT``).
-        start: 1-based start position on the chromosome.
-        end: End position on the chromosome (inclusive).
-        strand: Strand orientation (1 for forward, -1 for reverse).
-        source: Provenance sub-source that produced this record.
-        symbol: Optional HGNC gene symbol.
-        ensembl_gene_id: Optional Ensembl stable gene ID.
-        mapping_type: Optional classification of the coordinate mapping.
+        cm_source: Provenance sub-source name (``NCBI``, ``Ensembl``,
+            ``CCDS``, ``Chrom``, ``Pseudogene.org``).
+        cm_strand: Strand character (``+``, ``-``, or `` `` for cytoband).
+        cm_chr: Chromosome name (e.g. ``7``, ``X``, ``MT``).
+        cm_start: 1-based start position on the chromosome.
+        cm_end: End position on the chromosome (inclusive).
+        cm_source_id: Source-specific identifier for the record.
+        cm_eg_id: Entrez Gene ID (integer), or None.
+        cm_hgnc_id: Entrez Gene ID used as HGNC link (integer), or None.
+        cm_notes: Free-text notes from the source.
+        cm_mark: Annotation mark (``max``, ``hidden``, or None).
+        cm_mapby: Mapping classification key.
     """
 
-    hgnc_id: str = Field(min_length=1, description="HGNC identifier")
-    chromosome: str = Field(min_length=1, description="Chromosome name")
-    start: int = Field(gt=0, description="1-based start position")
-    end: int = Field(gt=0, description="End position")
-    strand: int = Field(description="Strand: 1 (forward) or -1 (reverse)")
-    source: CoordSource = Field(description="Provenance sub-source")
-    symbol: str | None = Field(default=None, description="HGNC gene symbol")
-    ensembl_gene_id: str | None = Field(default=None, description="Ensembl stable gene ID")
-    mapping_type: str | None = Field(default=None, description="Coordinate mapping type")
+    cm_source: str = Field(min_length=1, description="Provenance sub-source name")
+    cm_strand: str = Field(description="Strand character (+, -, or space)")
+    cm_chr: str = Field(min_length=1, description="Chromosome name")
+    cm_start: int = Field(gt=0, description="1-based start position")
+    cm_end: int = Field(gt=0, description="End position")
+    cm_source_id: str = Field(min_length=1, description="Source-specific identifier")
+    cm_eg_id: int | None = Field(default=None, description="Entrez Gene ID")
+    cm_hgnc_id: int | None = Field(default=None, description="HGNC link ID (Entrez Gene ID)")
+    cm_notes: str | None = Field(default=None, description="Free-text notes")
+    cm_mark: str | None = Field(default=None, description="Annotation mark")
+    cm_mapby: str = Field(min_length=1, description="Mapping classification key")
 
-    @field_validator("hgnc_id", "chromosome", mode="before")
+    @field_validator("cm_chr", "cm_source_id", "cm_mapby", mode="before")
     @classmethod
     def trim_required_strings(cls, v: str) -> str:
         return v.strip()
 
-    @field_validator("symbol", "ensembl_gene_id", "mapping_type", mode="before")
-    @classmethod
-    def trim_optional_fields(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
-        return v.strip() or None
-
-    @field_validator("strand")
-    @classmethod
-    def validate_strand(cls, v: int) -> int:
-        if v not in (1, -1):
-            msg = f"Strand must be 1 or -1, got {v}"
-            raise ValueError(msg)
-        return v
-
     def __lt__(self, other: CoordinateRecord) -> bool:
-        return (self.hgnc_id, self.chromosome) < (other.hgnc_id, other.chromosome)
+        return (self.cm_hgnc_id or 0, self.cm_chr) < (
+            other.cm_hgnc_id or 0,
+            other.cm_chr,
+        )
 
     def __le__(self, other: CoordinateRecord) -> bool:
-        return (self.hgnc_id, self.chromosome) <= (other.hgnc_id, other.chromosome)
+        return (self.cm_hgnc_id or 0, self.cm_chr) <= (
+            other.cm_hgnc_id or 0,
+            other.cm_chr,
+        )
 
     def __gt__(self, other: CoordinateRecord) -> bool:
-        return (self.hgnc_id, self.chromosome) > (other.hgnc_id, other.chromosome)
+        return (self.cm_hgnc_id or 0, self.cm_chr) > (
+            other.cm_hgnc_id or 0,
+            other.cm_chr,
+        )
 
     def __ge__(self, other: CoordinateRecord) -> bool:
-        return (self.hgnc_id, self.chromosome) >= (other.hgnc_id, other.chromosome)
+        return (self.cm_hgnc_id or 0, self.cm_chr) >= (
+            other.cm_hgnc_id or 0,
+            other.cm_chr,
+        )
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, CoordinateRecord):
             return NotImplemented
         return (
-            self.hgnc_id == other.hgnc_id
-            and self.chromosome == other.chromosome
-            and self.start == other.start
-            and self.end == other.end
-            and self.strand == other.strand
-            and self.source == other.source
+            self.cm_source == other.cm_source
+            and self.cm_strand == other.cm_strand
+            and self.cm_chr == other.cm_chr
+            and self.cm_start == other.cm_start
+            and self.cm_end == other.cm_end
+            and self.cm_source_id == other.cm_source_id
         )
 
-    def to_dict(self) -> dict[str, str | int | None]:
+    def to_dict(self) -> dict[str, str | int]:
         """Convert to a flat dictionary suitable for COPY bulk load.
 
+        Maps None values to empty strings for CSV compatibility with
+        the staging table DDL. Returns exactly the 11 cm_* columns.
+
         Returns:
-            Dictionary with all fields as plain Python types.
+            Dictionary with all cm_* fields as plain Python types.
         """
         return {
-            "hgnc_id": self.hgnc_id,
-            "chromosome": self.chromosome,
-            "start": self.start,
-            "end": self.end,
-            "strand": self.strand,
-            "source": self.source.value,
-            "symbol": self.symbol,
-            "ensembl_gene_id": self.ensembl_gene_id,
-            "mapping_type": self.mapping_type,
+            "cm_source": self.cm_source,
+            "cm_strand": self.cm_strand,
+            "cm_chr": self.cm_chr,
+            "cm_start": self.cm_start,
+            "cm_end": self.cm_end,
+            "cm_source_id": self.cm_source_id,
+            "cm_eg_id": self.cm_eg_id if self.cm_eg_id is not None else "",
+            "cm_hgnc_id": self.cm_hgnc_id if self.cm_hgnc_id is not None else "",
+            "cm_notes": self.cm_notes if self.cm_notes is not None else "",
+            "cm_mark": self.cm_mark if self.cm_mark is not None else "",
+            "cm_mapby": self.cm_mapby,
         }
 
 
