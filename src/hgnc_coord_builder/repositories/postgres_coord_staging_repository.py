@@ -111,15 +111,15 @@ class PostgresCoordStagingRepository(CoordStagingRepository):
 
     def create_staging_indexes(self, staging_table: str) -> None:
         staging_id = sql.Identifier(staging_table)
-        idx_hgnc = sql.Identifier(f"idx_{staging_table}_hgnc_id")
-        idx_chr = sql.Identifier(f"idx_{staging_table}_chromosome")
+        idx_hgnc = sql.Identifier(f"idx_{staging_table}_cm_hgnc_id")
+        idx_chr = sql.Identifier(f"idx_{staging_table}_cm_chr")
 
         create_hgnc_idx = sql.SQL(
-            "CREATE INDEX IF NOT EXISTS {idx} ON {table} (hgnc_id)"
+            "CREATE INDEX IF NOT EXISTS {idx} ON {table} (cm_hgnc_id)"
         ).format(idx=idx_hgnc, table=staging_id)
 
         create_chr_idx = sql.SQL(
-            "CREATE INDEX IF NOT EXISTS {idx} ON {table} (chromosome)"
+            "CREATE INDEX IF NOT EXISTS {idx} ON {table} (cm_chr)"
         ).format(idx=idx_chr, table=staging_id)
 
         with self._engine.raw_connection() as raw_conn:
