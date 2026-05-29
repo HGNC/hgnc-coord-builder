@@ -11,11 +11,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ensembl_orm.enums import EnsemblObjectType
-from ensembl_orm.models import ExternalDb, Gene, ObjectXref, Xref
+from ensembl_orm.models import Gene
 from sqlalchemy import select
 
-from hgnc_coord_builder.domain.models import CoordinateRecord, CoordSource
+from hgnc_coord_builder.domain.models import CoordinateRecord
 from hgnc_coord_builder.exceptions import RepositoryError
 from hgnc_coord_builder.repositories.ensembl_coordinate_repository import (
     EnsemblCoordinateRepository,
@@ -50,29 +49,23 @@ class MysqlEnsemblCoordinateRepository(EnsemblCoordinateRepository):
             return False
 
     def fetch_gene_coordinates(self) -> list[CoordinateRecord]:
-        """Fetch GRCh38 gene coordinates from Ensembl for HGNC-mapped genes.
+        """Fetch GRCh38 gene coordinates from Ensembl for all genes.
 
         Queries the Ensembl ``gene`` table joined with ``seq_region``
-        for chromosome names, filtered to HGNC-mapped genes via
-        ``object_xref``, ``xref``, and ``external_db`` tables. Only
-        current genes (``is_current=True``) are included.
+        for chromosome names. All current genes (``is_current=True``)
+        are included. Maps to cm_* fields matching the Perl
+        EnsemblGeneCoords behaviour: no HGNC join, strand converted
+        to +/- strings, notes with source/desc/biotype format.
 
         Returns:
-            Sorted list of coordinate records from Ensembl gene data.
+            List of coordinate records from Ensembl gene data.
 
         Raises:
             RepositoryError: On database connectivity or query failure.
         """
         stmt = (
-            select(Gene, Xref.display_label.label("hgnc_label"))
-            .join(ObjectXref, ObjectXref.ensembl_id == Gene.gene_id)
-            .join(Xref, ObjectXref.xref_id == Xref.xref_id)
-            .join(ExternalDb, Xref.external_db_id == ExternalDb.external_db_id)
-            .where(
-                ExternalDb.db_name == "HGNC",
-                ObjectXref.ensembl_object_type == EnsemblObjectType.GENE,
-                Gene.is_current.is_(True),
-            )
+            select(Gene)
+            .where(Gene.is_current.is_(True))
             .order_by(Gene.stable_id)
         )
 
@@ -85,9 +78,8 @@ class MysqlEnsemblCoordinateRepository(EnsemblCoordinateRepository):
         records: list[CoordinateRecord] = []
         for row in results:
             gene: Gene = row[0]
-            hgnc_label: str = row[1]
 
-            if not gene.seq_region or not gene.stable_id or not hgnc_label:
+            if not gene.seq_region or not gene.stable_id:
                 logger.warning(
                     "skipping_gene_missing_data",
                     extra={"gene_id": gene.gene_id, "stable_id": gene.stable_id},
@@ -104,16 +96,26 @@ class MysqlEnsemblCoordinateRepository(EnsemblCoordinateRepository):
                 )
                 continue
 
+            strand = "+" if gene.seq_region_strand == 1 else "-"
+            description = gene.description or "-"
+            notes = (
+                f"source => {gene.source}, status => NULL, "
+                f"desc =>{description}, biotype => {gene.biotype}"
+            )
+
             records.append(
                 CoordinateRecord(
-                    hgnc_id=hgnc_label,
-                    chromosome=gene.seq_region.name,
-                    start=gene.seq_region_start,
-                    end=gene.seq_region_end,
-                    strand=gene.seq_region_strand,
-                    source=CoordSource.ENSEMBL,
-                    ensembl_gene_id=gene.stable_id,
-                    mapping_type="gene",
+                    cm_source="Ensembl",
+                    cm_strand=strand,
+                    cm_chr=gene.seq_region.name,
+                    cm_start=gene.seq_region_start,
+                    cm_end=gene.seq_region_end,
+                    cm_source_id=gene.stable_id,
+                    cm_eg_id=None,
+                    cm_hgnc_id=None,
+                    cm_notes=notes,
+                    cm_mark=None,
+                    cm_mapby=gene.stable_id,
                 )
             )
 

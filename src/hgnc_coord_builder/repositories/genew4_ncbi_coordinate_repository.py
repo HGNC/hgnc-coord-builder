@@ -14,7 +14,7 @@ from typing import Any
 from genew4_orm.models import Gene2Refseq, GeneInfo
 from sqlalchemy import select
 
-from hgnc_coord_builder.domain.models import CoordinateRecord, CoordSource
+from hgnc_coord_builder.domain.models import CoordinateRecord
 from hgnc_coord_builder.exceptions import RepositoryError
 from hgnc_coord_builder.repositories.ncbi_coordinate_repository import (
     NcbiCoordinateRepository,
@@ -59,10 +59,11 @@ class Genew4NcbiCoordinateRepository(NcbiCoordinateRepository):
         Queries ``gene2refseq`` joined with ``gene_info`` on
         (tax_id, eg_id), filtered to human taxonomy, GRCh38 assembly,
         and RefSeq genomic accessions starting with ``NC_``. Returns
-        normalised CoordinateRecord instances sorted by hgnc_id.
+        CoordinateRecord instances with cm_* fields matching the
+        production staging table DDL.
 
         Returns:
-            Sorted list of coordinate records from NCBI gene data.
+            List of coordinate records from NCBI gene data.
 
         Raises:
             RepositoryError: On database connectivity or query failure.
@@ -79,7 +80,6 @@ class Genew4NcbiCoordinateRepository(NcbiCoordinateRepository):
                 Gene2Refseq.assembly.like(_GRCH38_ASSEMBLY_PATTERN),
                 Gene2Refseq.gen_nt_acc_ver.like(_NC_ACCESSION_PREFIX),
             )
-            .order_by(GeneInfo.hgnc_id)
         )
 
         try:
@@ -109,6 +109,9 @@ class Genew4NcbiCoordinateRepository(NcbiCoordinateRepository):
         """Transform a Gene2Refseq + GeneInfo row into a CoordinateRecord.
 
         Returns None when required fields are missing or unparseable.
+        Maps to cm_* fields matching the Perl NCBIGeneCoords behaviour:
+        cm_hgnc_id = eg_id (integer), cm_source = 'NCBI',
+        cm_strand defaults to '-' when missing.
 
         Args:
             g2r: Gene2Refseq ORM row from the join.
@@ -117,9 +120,6 @@ class Genew4NcbiCoordinateRepository(NcbiCoordinateRepository):
         Returns:
             A CoordinateRecord, or None if the row should be skipped.
         """
-        if not gi.hgnc_id:
-            return None
-
         chromosome = self._clean_chromosome(gi.chromosome)
         if not chromosome:
             return None
@@ -132,23 +132,33 @@ class Genew4NcbiCoordinateRepository(NcbiCoordinateRepository):
         if end is None:
             return None
 
+        eg_id = self._parse_int(g2r.g2r_eg_id)
+        if eg_id is None:
+            return None
+
         strand = self._normalise_strand(g2r.orientation)
 
         return CoordinateRecord(
-            hgnc_id=f"HGNC:{gi.hgnc_id}",
-            chromosome=chromosome,
-            start=start,
-            end=end,
-            strand=strand,
-            source=CoordSource.NCBI,
+            cm_source="NCBI",
+            cm_strand=strand,
+            cm_chr=chromosome,
+            cm_start=start,
+            cm_end=end,
+            cm_source_id=g2r.g2r_rna_nt_acc_ver or "",
+            cm_eg_id=eg_id,
+            cm_hgnc_id=eg_id,
+            cm_notes=g2r.gen_nt_acc_ver or "",
+            cm_mark=None,
+            cm_mapby=str(eg_id),
         )
 
     @staticmethod
     def _clean_chromosome(raw: str | None) -> str | None:
-        """Normalise a chromosome name by stripping known prefixes.
+        """Normalise a chromosome name matching Perl truncation.
 
-        Strips ``chr`` prefix (case-insensitive) from chromosome names
-        to match Grch38Mapping expectations.
+        Strips ``chr`` prefix (case-insensitive) and truncates to the
+        leading chromosome identifier, matching the Perl regex
+        ``s{(^[XYMT\\d]+).*}{$1}``.
 
         Args:
             raw: Raw chromosome string from gene_info.
@@ -161,6 +171,11 @@ class Genew4NcbiCoordinateRepository(NcbiCoordinateRepository):
         cleaned = raw.strip()
         if cleaned.lower().startswith("chr"):
             cleaned = cleaned[3:]
+        import re as _re
+
+        match = _re.match(r"^([XYMT\d]+)", cleaned)
+        if match:
+            cleaned = match.group(1)
         return cleaned or None
 
     @staticmethod
@@ -181,18 +196,20 @@ class Genew4NcbiCoordinateRepository(NcbiCoordinateRepository):
             return None
 
     @staticmethod
-    def _normalise_strand(orientation: str | None) -> int:
-        """Map NCBI orientation string to strand integer.
+    def _normalise_strand(orientation: str | None) -> str:
+        """Map NCBI orientation string to strand character.
 
-        Maps '+' to 1 and '-' to -1. Defaults to -1 for None,
-        empty, or unrecognised values.
+        Maps '+' to '+', '-' to '-'. Defaults to '-' for None,
+        empty, or unrecognised values, matching Perl behaviour.
 
         Args:
             orientation: Raw orientation string from gene2refseq.
 
         Returns:
-            1 for forward strand, -1 for reverse or default.
+            '+' for forward strand, '-' for reverse or default.
         """
         if orientation == "+":
-            return 1
-        return -1
+            return "+"
+        if orientation == "-":
+            return "-"
+        return "-"
