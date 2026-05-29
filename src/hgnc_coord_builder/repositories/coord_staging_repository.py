@@ -105,6 +105,25 @@ class CoordStagingRepository(Repository):
         """
 
     @abstractmethod
+    def set_default_cm_mark(self) -> None:
+        """Apply post-load cm_mark annotations on coord_match_grch38.
+
+        Sets ``cm_mark='hidden'`` for all CCDS rows. For all other sources,
+        sets ``cm_mark='max'`` on the row with the highest OID per unique
+        coordinate tuple (source, start, end, strand, chr). All other
+        non-CCDS rows remain with ``cm_mark=NULL``.
+        """
+
+    @abstractmethod
+    def set_default_cm_note(self) -> None:
+        """Apply post-load cm_note warnings on coord_match_grch38.
+
+        Clears all existing ``cm_notes``. Then sets a warning note on
+        rows where the same ``cm_mapby`` value has conflicting start
+        or end positions (within the same chromosome).
+        """
+
+    @abstractmethod
     def promote_staging_to_production(self, staging_table: str) -> None:
         """Atomically promote the staging table to production.
 

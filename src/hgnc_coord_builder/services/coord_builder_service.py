@@ -192,6 +192,10 @@ class CoordBuilderService(Service):
         self._staging_repository.validate_row_count(staging_table, len(records))
 
         self._staging_repository.promote_staging_to_production(staging_table)
+
+        self._staging_repository.set_default_cm_mark()
+        self._staging_repository.set_default_cm_note()
+
         self._logger.info(
             "coord_build_complete",
             extra=metrics.snapshot(),

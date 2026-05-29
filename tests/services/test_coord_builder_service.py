@@ -175,3 +175,38 @@ class TestCoordBuilderServiceOrchestration:
 
         with pytest.raises(RepositoryError, match="NCBI"):
             service.run()
+
+    def test_calls_post_load_annotations_after_promotion(self) -> None:
+        repos = _make_repos()
+        repos["ncbi"].fetch_gene_coordinates.return_value = [
+            _make_record(source=CoordSource.NCBI),
+        ]
+
+        service = _make_service(repos)
+        service.run()
+
+        repos["staging"].promote_staging_to_production.assert_called_once()
+        repos["staging"].set_default_cm_mark.assert_called_once()
+        repos["staging"].set_default_cm_note.assert_called_once()
+
+    def test_post_load_called_in_correct_order(self) -> None:
+        repos = _make_repos()
+        repos["ncbi"].fetch_gene_coordinates.return_value = [
+            _make_record(source=CoordSource.NCBI),
+        ]
+
+        call_order: list[str] = []
+        repos["staging"].promote_staging_to_production.side_effect = (
+            lambda *a, **k: call_order.append("promote")
+        )
+        repos["staging"].set_default_cm_mark.side_effect = (
+            lambda *a, **k: call_order.append("cm_mark")
+        )
+        repos["staging"].set_default_cm_note.side_effect = (
+            lambda *a, **k: call_order.append("cm_note")
+        )
+
+        service = _make_service(repos)
+        service.run()
+
+        assert call_order == ["promote", "cm_mark", "cm_note"]

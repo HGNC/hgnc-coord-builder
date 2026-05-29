@@ -155,6 +155,77 @@ class PostgresCoordStagingRepository(CoordStagingRepository):
             extra={"staging_table": staging_table, "expected": expected, "actual": actual},
         )
 
+    def set_default_cm_mark(self) -> None:
+        max_non_ncbi_ccds = sql.SQL("""
+            UPDATE {table}
+            SET cm_mark = 'max'
+            WHERE cm_source != 'NCBI'
+              AND cm_source != 'CCDS'
+              AND oid IN (
+                SELECT MAX(oid)
+                FROM {table}
+                GROUP BY cm_source||' '||cm_start||' '||cm_end||' '||cm_strand||' '||cm_chr
+              )
+        """).format(table=sql.Identifier(PRODUCTION_TABLE))
+
+        max_ncbi = sql.SQL("""
+            UPDATE {table}
+            SET cm_mark = 'max'
+            WHERE cm_source = 'NCBI'
+              AND oid IN (
+                SELECT MAX(oid)
+                FROM {table}
+                GROUP BY cm_source||' '||cm_start||' '||cm_end||' '||cm_strand||' '||cm_chr
+              )
+        """).format(table=sql.Identifier(PRODUCTION_TABLE))
+
+        hidden_ccds = sql.SQL("""
+            UPDATE {table}
+            SET cm_mark = 'hidden'
+            WHERE cm_source = 'CCDS'
+        """).format(table=sql.Identifier(PRODUCTION_TABLE))
+
+        with self._engine.raw_connection() as raw_conn:
+            with raw_conn.cursor() as cur:
+                cur.execute(max_non_ncbi_ccds)
+                cur.execute(max_ncbi)
+                cur.execute(hidden_ccds)
+            raw_conn.commit()
+
+        logger.info("coord_cm_mark_annotations_applied")
+
+    def set_default_cm_note(self) -> None:
+        clear_notes = sql.SQL("""
+            UPDATE {table}
+            SET cm_notes = NULL
+            WHERE cm_notes IS NOT NULL
+        """).format(table=sql.Identifier(PRODUCTION_TABLE))
+
+        set_warning = sql.SQL("""
+            UPDATE {table}
+            SET cm_notes = %s
+            WHERE cm_mapby IN (
+                SELECT DISTINCT a.cm_mapby
+                FROM {table} a, {table} b
+                WHERE a.cm_mapby = b.cm_mapby
+                  AND (
+                    a.cm_start != b.cm_start OR
+                    a.cm_end != b.cm_end
+                  )
+                  AND a.cm_chr = b.cm_chr
+              )
+        """).format(table=sql.Identifier(PRODUCTION_TABLE))
+
+        warning_text = "\n<br><b>Warning<b>: This ID is associated with multiple coordinates"
+
+        with self._engine.raw_connection() as raw_conn:
+            with raw_conn.cursor() as cur:
+                cur.execute(clear_notes)
+                cur.execute(set_warning, [warning_text])
+            raw_conn.commit()
+
+        logger.info("coord_cm_note_annotations_applied")
+
     def promote_staging_to_production(self, staging_table: str) -> None:
         drop_prod = sql.SQL("DROP TABLE IF EXISTS {table}").format(
             table=sql.Identifier(PRODUCTION_TABLE),
