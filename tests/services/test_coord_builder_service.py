@@ -11,26 +11,36 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from hgnc_coord_builder.domain.models import CoordinateRecord, CoordMetrics, CoordSource
+from hgnc_coord_builder.domain.models import CoordinateRecord, CoordMetrics
 from hgnc_coord_builder.exceptions import RepositoryError
 from hgnc_coord_builder.services.coord_builder_service import CoordBuilderService
 
 
 def _make_record(
-    hgnc_id: str = "HGNC:1100",
-    chromosome: str = "7",
-    start: int = 100,
-    end: int = 200,
-    strand: int = 1,
-    source: CoordSource = CoordSource.NCBI,
+    cm_source: str = "NCBI",
+    cm_strand: str = "+",
+    cm_chr: str = "7",
+    cm_start: int = 100,
+    cm_end: int = 200,
+    cm_source_id: str = "NM_000492.4",
+    cm_eg_id: int | None = 12345,
+    cm_hgnc_id: int | None = 12345,
+    cm_notes: str | None = None,
+    cm_mark: str | None = None,
+    cm_mapby: str = "12345",
 ) -> CoordinateRecord:
     return CoordinateRecord(
-        hgnc_id=hgnc_id,
-        chromosome=chromosome,
-        start=start,
-        end=end,
-        strand=strand,
-        source=source,
+        cm_source=cm_source,
+        cm_strand=cm_strand,
+        cm_chr=cm_chr,
+        cm_start=cm_start,
+        cm_end=cm_end,
+        cm_source_id=cm_source_id,
+        cm_eg_id=cm_eg_id,
+        cm_hgnc_id=cm_hgnc_id,
+        cm_notes=cm_notes,
+        cm_mark=cm_mark,
+        cm_mapby=cm_mapby,
     )
 
 
@@ -92,19 +102,19 @@ class TestCoordBuilderServiceOrchestration:
     def test_merges_records_from_all_sources(self) -> None:
         repos = _make_repos()
         repos["ncbi"].fetch_gene_coordinates.return_value = [
-            _make_record(hgnc_id="HGNC:1", source=CoordSource.NCBI),
+            _make_record(cm_source="NCBI", cm_hgnc_id=1),
         ]
         repos["ensembl"].fetch_gene_coordinates.return_value = [
-            _make_record(hgnc_id="HGNC:2", source=CoordSource.ENSEMBL),
+            _make_record(cm_source="Ensembl", cm_hgnc_id=2, cm_eg_id=None),
         ]
         repos["ccds"].fetch_gene_coordinates.return_value = [
-            _make_record(hgnc_id="HGNC:3", source=CoordSource.CCDS),
+            _make_record(cm_source="CCDS", cm_hgnc_id=None, cm_eg_id=None),
         ]
         repos["cytoband"].fetch_gene_coordinates.return_value = [
-            _make_record(hgnc_id="cytoband:7:p22", source=CoordSource.CYTOBAND),
+            _make_record(cm_source="Chrom", cm_strand=" ", cm_hgnc_id=None, cm_eg_id=None),
         ]
         repos["pseudogene"].fetch_gene_coordinates.return_value = [
-            _make_record(hgnc_id="pseudogene:1", source=CoordSource.PSEUDOGENE),
+            _make_record(cm_source="Pseudogene.org", cm_hgnc_id=None, cm_eg_id=None),
         ]
 
         service = _make_service(repos)
@@ -119,7 +129,7 @@ class TestCoordBuilderServiceOrchestration:
     def test_stages_and_promotes(self) -> None:
         repos = _make_repos()
         repos["ncbi"].fetch_gene_coordinates.return_value = [
-            _make_record(source=CoordSource.NCBI),
+            _make_record(cm_source="NCBI"),
         ]
 
         service = _make_service(repos)
@@ -133,11 +143,11 @@ class TestCoordBuilderServiceOrchestration:
     def test_returns_metrics(self) -> None:
         repos = _make_repos()
         repos["ncbi"].fetch_gene_coordinates.return_value = [
-            _make_record(source=CoordSource.NCBI),
-            _make_record(hgnc_id="HGNC:2", source=CoordSource.NCBI),
+            _make_record(cm_source="NCBI"),
+            _make_record(cm_source="NCBI", cm_hgnc_id=2),
         ]
         repos["ensembl"].fetch_gene_coordinates.return_value = [
-            _make_record(source=CoordSource.ENSEMBL),
+            _make_record(cm_source="Ensembl", cm_eg_id=None),
         ]
 
         service = _make_service(repos)
@@ -179,7 +189,7 @@ class TestCoordBuilderServiceOrchestration:
     def test_calls_post_load_annotations_after_promotion(self) -> None:
         repos = _make_repos()
         repos["ncbi"].fetch_gene_coordinates.return_value = [
-            _make_record(source=CoordSource.NCBI),
+            _make_record(cm_source="NCBI"),
         ]
 
         service = _make_service(repos)
@@ -192,7 +202,7 @@ class TestCoordBuilderServiceOrchestration:
     def test_post_load_called_in_correct_order(self) -> None:
         repos = _make_repos()
         repos["ncbi"].fetch_gene_coordinates.return_value = [
-            _make_record(source=CoordSource.NCBI),
+            _make_record(cm_source="NCBI"),
         ]
 
         call_order: list[str] = []

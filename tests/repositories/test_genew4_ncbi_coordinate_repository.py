@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from hgnc_coord_builder.domain.models import CoordinateRecord, CoordSource
+from hgnc_coord_builder.domain.models import CoordinateRecord
 from hgnc_coord_builder.exceptions import RepositoryError
 from hgnc_coord_builder.repositories.genew4_ncbi_coordinate_repository import (
     Genew4NcbiCoordinateRepository,
@@ -46,11 +46,11 @@ def _make_g2r_row(
 
 def _make_gi_row(
     chrom: str = "7",
-    hgnc_id: int = 1100,
+    eg_id: str = "12345",
 ) -> MagicMock:
     row = MagicMock()
     row.chromosome = chrom
-    row.hgnc_id = hgnc_id
+    row.gi_eg_id = eg_id
     return row
 
 
@@ -91,12 +91,11 @@ class TestGenew4NcbiCoordinateRepositoryUnit:
         assert len(records) == 1
         rec = records[0]
         assert isinstance(rec, CoordinateRecord)
-        assert rec.hgnc_id == "HGNC:1100"
-        assert rec.chromosome == "7"
-        assert rec.start == 100
-        assert rec.end == 200
-        assert rec.strand == 1
-        assert rec.source == CoordSource.NCBI
+        assert rec.cm_source == "NCBI"
+        assert rec.cm_chr == "7"
+        assert rec.cm_start == 100
+        assert rec.cm_end == 200
+        assert rec.cm_strand == "+"
 
     def test_fetch_maps_minus_strand(self) -> None:
         mock_session = MagicMock()
@@ -107,7 +106,7 @@ class TestGenew4NcbiCoordinateRepositoryUnit:
         repo = Genew4NcbiCoordinateRepository(session=mock_session)
         records = repo.fetch_gene_coordinates()
 
-        assert records[0].strand == -1
+        assert records[0].cm_strand == "-"
 
     def test_fetch_defaults_strand_when_missing(self) -> None:
         mock_session = MagicMock()
@@ -118,7 +117,7 @@ class TestGenew4NcbiCoordinateRepositoryUnit:
         repo = Genew4NcbiCoordinateRepository(session=mock_session)
         records = repo.fetch_gene_coordinates()
 
-        assert records[0].strand == -1
+        assert records[0].cm_strand == "-"
 
     def test_fetch_defaults_strand_when_empty(self) -> None:
         mock_session = MagicMock()
@@ -129,7 +128,7 @@ class TestGenew4NcbiCoordinateRepositoryUnit:
         repo = Genew4NcbiCoordinateRepository(session=mock_session)
         records = repo.fetch_gene_coordinates()
 
-        assert records[0].strand == -1
+        assert records[0].cm_strand == "-"
 
     def test_fetch_strips_chr_prefix_from_chromosome(self) -> None:
         mock_session = MagicMock()
@@ -140,18 +139,7 @@ class TestGenew4NcbiCoordinateRepositoryUnit:
         repo = Genew4NcbiCoordinateRepository(session=mock_session)
         records = repo.fetch_gene_coordinates()
 
-        assert records[0].chromosome == "7"
-
-    def test_fetch_skips_missing_hgnc_id(self) -> None:
-        mock_session = MagicMock()
-        g2r = _make_g2r_row()
-        gi = _make_gi_row(hgnc_id=None)
-        mock_session.execute.return_value = [(g2r, gi)]
-
-        repo = Genew4NcbiCoordinateRepository(session=mock_session)
-        records = repo.fetch_gene_coordinates()
-
-        assert records == []
+        assert records[0].cm_chr == "7"
 
     def test_fetch_skips_missing_chromosome(self) -> None:
         mock_session = MagicMock()
@@ -234,11 +222,11 @@ class TestGenew4NcbiCoordinateRepositoryUnit:
         rows = [
             (
                 _make_g2r_row(eg_id="12345", start="100", end="200"),
-                _make_gi_row(chrom="7", hgnc_id=1100),
+                _make_gi_row(chrom="7", eg_id="12345"),
             ),
             (
                 _make_g2r_row(eg_id="67890", start="300", end="400"),
-                _make_gi_row(chrom="X", hgnc_id=2200),
+                _make_gi_row(chrom="X", eg_id="67890"),
             ),
         ]
         mock_session.execute.return_value = rows
@@ -247,19 +235,8 @@ class TestGenew4NcbiCoordinateRepositoryUnit:
         records = repo.fetch_gene_coordinates()
 
         assert len(records) == 2
-        assert records[0].hgnc_id == "HGNC:1100"
-        assert records[1].hgnc_id == "HGNC:2200"
-
-    def test_fetch_formats_hgnc_id_with_prefix(self) -> None:
-        mock_session = MagicMock()
-        g2r = _make_g2r_row()
-        gi = _make_gi_row(hgnc_id=5)
-        mock_session.execute.return_value = [(g2r, gi)]
-
-        repo = Genew4NcbiCoordinateRepository(session=mock_session)
-        records = repo.fetch_gene_coordinates()
-
-        assert records[0].hgnc_id == "HGNC:5"
+        assert records[0].cm_hgnc_id == 12345
+        assert records[1].cm_hgnc_id == 67890
 
     def test_fetch_handles_x_chromosome(self) -> None:
         mock_session = MagicMock()
@@ -270,7 +247,7 @@ class TestGenew4NcbiCoordinateRepositoryUnit:
         repo = Genew4NcbiCoordinateRepository(session=mock_session)
         records = repo.fetch_gene_coordinates()
 
-        assert records[0].chromosome == "X"
+        assert records[0].cm_chr == "X"
 
     def test_fetch_handles_mt_chromosome(self) -> None:
         mock_session = MagicMock()
@@ -281,4 +258,4 @@ class TestGenew4NcbiCoordinateRepositoryUnit:
         repo = Genew4NcbiCoordinateRepository(session=mock_session)
         records = repo.fetch_gene_coordinates()
 
-        assert records[0].chromosome == "MT"
+        assert records[0].cm_chr == "MT"
