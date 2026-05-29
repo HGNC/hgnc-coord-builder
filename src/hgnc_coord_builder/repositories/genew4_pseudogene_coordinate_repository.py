@@ -13,7 +13,7 @@ from typing import Any
 from genew4_orm.models import PseudogeneOrg
 from sqlalchemy import select
 
-from hgnc_coord_builder.domain.models import CoordinateRecord, CoordSource
+from hgnc_coord_builder.domain.models import CoordinateRecord
 from hgnc_coord_builder.exceptions import RepositoryError
 from hgnc_coord_builder.repositories.pseudogene_coordinate_repository import (
     PseudogeneCoordinateRepository,
@@ -90,6 +90,10 @@ class Genew4PseudogeneCoordinateRepository(PseudogeneCoordinateRepository):
     def _build_record(self, porg: PseudogeneOrg) -> CoordinateRecord | None:
         """Transform a PseudogeneOrg ORM row into a CoordinateRecord.
 
+        Maps to cm_* fields matching the Perl PseudogeneCoords behaviour:
+        cm_source='Pseudogene.org', cm_notes=class||', '||link,
+        strand defaults to '-' if missing.
+
         Args:
             porg: PseudogeneOrg ORM row from the query.
 
@@ -105,15 +109,24 @@ class Genew4PseudogeneCoordinateRepository(PseudogeneCoordinateRepository):
 
         strand = self._normalise_strand(porg.strand)
         if strand is None:
-            return None
+            strand = "-"
+
+        porg_class = porg.porg_class or ""
+        porg_link = porg.porg_link or ""
+        notes = f"{porg_class}, {porg_link}"
 
         return CoordinateRecord(
-            hgnc_id=f"pseudogene:{porg.porg_id}",
-            chromosome=chromosome,
-            start=int(porg.start),
-            end=int(porg.end),
-            strand=strand,
-            source=CoordSource.PSEUDOGENE,
+            cm_source="Pseudogene.org",
+            cm_strand=strand,
+            cm_chr=chromosome,
+            cm_start=int(porg.start),
+            cm_end=int(porg.end),
+            cm_source_id=str(porg.porg_id),
+            cm_eg_id=None,
+            cm_hgnc_id=None,
+            cm_notes=notes,
+            cm_mark=None,
+            cm_mapby=str(porg.porg_id),
         )
 
     @staticmethod
@@ -134,17 +147,17 @@ class Genew4PseudogeneCoordinateRepository(PseudogeneCoordinateRepository):
         return cleaned or None
 
     @staticmethod
-    def _normalise_strand(raw: str | None) -> int | None:
-        """Map strand string to integer.
+    def _normalise_strand(raw: str | None) -> str | None:
+        """Map strand string to string.
 
         Args:
             raw: Raw strand string ('+' or '-').
 
         Returns:
-            1 for '+', -1 for '-', or None if missing/unrecognised.
+            '+' or '-', or None if missing/unrecognised.
         """
         if raw == "+":
-            return 1
+            return "+"
         if raw == "-":
-            return -1
+            return "-"
         return None

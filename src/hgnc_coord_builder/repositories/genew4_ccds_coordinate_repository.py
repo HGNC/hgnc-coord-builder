@@ -14,7 +14,7 @@ from typing import Any
 from genew4_orm.models import Ccds
 from sqlalchemy import select
 
-from hgnc_coord_builder.domain.models import CoordinateRecord, CoordSource
+from hgnc_coord_builder.domain.models import CoordinateRecord
 from hgnc_coord_builder.exceptions import RepositoryError
 from hgnc_coord_builder.repositories.ccds_coordinate_repository import (
     CcdsCoordinateRepository,
@@ -65,7 +65,7 @@ class Genew4CcdsCoordinateRepository(CcdsCoordinateRepository):
         Raises:
             RepositoryError: On database connectivity or query failure.
         """
-        stmt = select(Ccds).order_by(Ccds.hgnc_id)
+        stmt = select(Ccds)
 
         try:
             results = self._session.execute(stmt)
@@ -82,13 +82,13 @@ class Genew4CcdsCoordinateRepository(CcdsCoordinateRepository):
             if record is None:
                 continue
 
-            dedup_key = f"{ccds.ccds_id}{_DEDUP_SEPARATOR}{record.chromosome}"
+            dedup_key = f"{ccds.ccds_id}{_DEDUP_SEPARATOR}{record.cm_chr}"
             if dedup_key in seen_keys:
                 continue
             seen_keys.add(dedup_key)
             records.append(record)
 
-        records.sort(key=lambda r: r.hgnc_id)
+        records.sort(key=lambda r: (r.cm_hgnc_id or 0, r.cm_chr))
 
         logger.info(
             "ccds_coordinates_fetched",
@@ -100,6 +100,7 @@ class Genew4CcdsCoordinateRepository(CcdsCoordinateRepository):
         """Transform a Ccds ORM row into a CoordinateRecord.
 
         Returns None when required fields are missing or unparseable.
+        Maps to cm_* fields matching the Perl CCDSGeneCoords behaviour.
 
         Args:
             ccds: Ccds ORM row from the query.
@@ -107,9 +108,6 @@ class Genew4CcdsCoordinateRepository(CcdsCoordinateRepository):
         Returns:
             A CoordinateRecord, or None if the row should be skipped.
         """
-        if not ccds.hgnc_id:
-            return None
-
         chromosome = self._clean_chromosome(ccds.chromosome)
         if not chromosome:
             return None
@@ -127,12 +125,17 @@ class Genew4CcdsCoordinateRepository(CcdsCoordinateRepository):
             return None
 
         return CoordinateRecord(
-            hgnc_id=f"HGNC:{ccds.hgnc_id}",
-            chromosome=chromosome,
-            start=start,
-            end=end,
-            strand=strand,
-            source=CoordSource.CCDS,
+            cm_source="CCDS",
+            cm_strand=strand,
+            cm_chr=chromosome,
+            cm_start=start,
+            cm_end=end,
+            cm_source_id=ccds.ccds_id,
+            cm_eg_id=None,
+            cm_hgnc_id=None,
+            cm_notes=ccds.status or "",
+            cm_mark=None,
+            cm_mapby=ccds.ccds_id,
         )
 
     @staticmethod
@@ -170,17 +173,17 @@ class Genew4CcdsCoordinateRepository(CcdsCoordinateRepository):
             return None
 
     @staticmethod
-    def _normalise_strand(raw: str | None) -> int | None:
-        """Map CCDS strand string to integer.
+    def _normalise_strand(raw: str | None) -> str | None:
+        """Map CCDS strand string.
 
         Args:
             raw: Raw strand string ('+' or '-').
 
         Returns:
-            1 for '+', -1 for '-', or None if missing/unrecognised.
+            '+' or '-', or None if missing/unrecognised.
         """
         if raw == "+":
-            return 1
+            return "+"
         if raw == "-":
-            return -1
+            return "-"
         return None

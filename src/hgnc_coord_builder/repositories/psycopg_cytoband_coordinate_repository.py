@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from hgnc_coord_builder.domain.models import CoordinateRecord, CoordSource
+from hgnc_coord_builder.domain.models import CoordinateRecord
 from hgnc_coord_builder.exceptions import RepositoryError
 from hgnc_coord_builder.repositories.cytoband_coordinate_repository import (
     CytobandCoordinateRepository,
@@ -93,7 +93,9 @@ class PsycopgCytobandCoordinateRepository(CytobandCoordinateRepository):
         """Transform a cytoband SQL row into a CoordinateRecord.
 
         Returns None when required fields are missing or when the row
-        is a duplicate.
+        is a duplicate. Maps to cm_* fields matching the Perl ChrCoords
+        behaviour: cm_source='Chrom', cm_strand=' ' (space),
+        cm_source_id=cb_chr||cb_band.
 
         Args:
             row: Tuple of (cb_source, cb_chr, cb_start, cb_end, cb_band).
@@ -112,18 +114,24 @@ class PsycopgCytobandCoordinateRepository(CytobandCoordinateRepository):
             return None
 
         band_str = band or ""
+        source_id = f"{chromosome}{band_str}"
         dedup_key = f"{chromosome}:_:{band_str}"
         if dedup_key in seen_keys:
             return None
         seen_keys.add(dedup_key)
 
         return CoordinateRecord(
-            hgnc_id=f"cytoband:{chromosome}:{band_str}",
-            chromosome=chromosome,
-            start=int(start),
-            end=int(end),
-            strand=1,
-            source=CoordSource.CYTOBAND,
+            cm_source="Chrom",
+            cm_strand=" ",
+            cm_chr=chromosome,
+            cm_start=int(start),
+            cm_end=int(end),
+            cm_source_id=source_id,
+            cm_eg_id=None,
+            cm_hgnc_id=None,
+            cm_notes=None,
+            cm_mark=None,
+            cm_mapby=source_id,
         )
 
     @staticmethod
