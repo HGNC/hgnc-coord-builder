@@ -11,20 +11,6 @@ import enum
 from pydantic import BaseModel, Field, field_validator
 
 
-class CoordSource(str, enum.Enum):
-    """Provenance source for coordinate records.
-
-    Each member corresponds to one of the five sub-sources that feed into
-    ``coord_match_grch38``.
-    """
-
-    NCBI = "ncbi"
-    ENSEMBL = "ensembl"
-    CCDS = "ccds"
-    CYTOBAND = "cytoband"
-    PSEUDOGENE = "pseudogene"
-
-
 class CoordinateRecord(BaseModel):
     """A GRCh38-compatible coordinate record matching the cm_* DDL schema.
 
@@ -142,14 +128,13 @@ class CoordMetrics(BaseModel):
     skipped: int = Field(default=0, description="Skipped records")
     by_source: dict[str, int] = Field(default_factory=dict, description="Per-source counts")
 
-    def increment(self, source: CoordSource) -> None:
+    def increment(self, source: str) -> None:
         """Increment the counter for a given source.
 
         Args:
-            source: The sub-source to increment.
+            source: The sub-source name to increment.
         """
-        key = source.value
-        self.by_source[key] = self.by_source.get(key, 0) + 1
+        self.by_source[source] = self.by_source.get(source, 0) + 1
 
     def snapshot(self) -> dict[str, int | dict[str, int]]:
         """Return a snapshot of current metrics for logging.

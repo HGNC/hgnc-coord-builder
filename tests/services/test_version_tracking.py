@@ -11,27 +11,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from hgnc_coord_builder.domain.models import CoordinateRecord, CoordSource
 from hgnc_coord_builder.exceptions import RepositoryError
 from hgnc_coord_builder.services.coord_builder_service import CoordBuilderService
-
-
-def _make_record(
-    hgnc_id: str = "HGNC:1100",
-    chromosome: str = "7",
-    start: int = 100,
-    end: int = 200,
-    strand: int = 1,
-    source: CoordSource = CoordSource.NCBI,
-) -> CoordinateRecord:
-    return CoordinateRecord(
-        hgnc_id=hgnc_id,
-        chromosome=chromosome,
-        start=start,
-        end=end,
-        strand=strand,
-        source=source,
-    )
 
 
 def _make_repos() -> dict:
